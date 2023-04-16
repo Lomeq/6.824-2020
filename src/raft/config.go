@@ -86,12 +86,10 @@ func make_config(t *testing.T, n int, unreliable bool) *config {
 		cfg.logs[i] = map[int]interface{}{}
 		cfg.start1(i)
 	}
-
 	// connect everyone
 	for i := 0; i < cfg.n; i++ {
 		cfg.connect(i)
 	}
-
 	return cfg
 }
 

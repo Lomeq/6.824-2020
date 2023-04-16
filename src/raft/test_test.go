@@ -4,7 +4,7 @@ package raft
 // Raft tests.
 //
 // we will use the original test_test.go to test your code for grading.
-// so, while you can modify this code to help you debug, please
+// so, while you can modify this code to help you Debug, please
 // test with the original before submitting.
 //
 
@@ -28,7 +28,6 @@ func TestInitialElection2A(t *testing.T) {
 
 	// is a leader elected?
 	cfg.checkOneLeader()
-
 	// sleep a bit to avoid racing with followers learning of the
 	// election, then check that all peers agree on the term.
 	time.Sleep(50 * time.Millisecond)
@@ -60,26 +59,32 @@ func TestReElection2A(t *testing.T) {
 	leader1 := cfg.checkOneLeader()
 
 	// if the leader disconnects, a new one should be elected.
+	Debug(dClient,"S%d ------------disconnected------------------",leader1)
 	cfg.disconnect(leader1)
 	cfg.checkOneLeader()
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader.
+	Debug(dClient,"S%d ------------CONNECT------------------",leader1)
 	cfg.connect(leader1)
-	leader2 := cfg.checkOneLeader()
+	leader2 := cfg.checkOneLeader()  //这里发现有两个leader（leader1和leader2）
 
 	// if there's no quorum, no leader should
 	// be elected.
+	Debug(dClient,"S%d ------------disconnected------------------",leader2)
 	cfg.disconnect(leader2)
+	Debug(dClient,"S%d ------------disconnected------------------",(leader2 + 1) % servers)
 	cfg.disconnect((leader2 + 1) % servers)
-	time.Sleep(2 * RaftElectionTimeout)
+	time.Sleep(2 * RaftElectionTimeout)    //让新接入的leader1变成follower??
 	cfg.checkNoLeader()
 
 	// if a quorum arises, it should elect a leader.
+	Debug(dClient,"S%d ------------connected------------------",(leader2 + 1) % servers)
 	cfg.connect((leader2 + 1) % servers)
 	cfg.checkOneLeader()
 
 	// re-join of last node shouldn't prevent leader from existing.
+	Debug(dClient,"S%d ------------connected------------------",leader2)
 	cfg.connect(leader2)
 	cfg.checkOneLeader()
 
