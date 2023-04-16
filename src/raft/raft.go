@@ -215,18 +215,19 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		return 
 	}
 
-	if rf.currentTerm == args.Term && rf.votedFor == -1 || rf.votedFor == args.CandidateId {  //此时说明这一轮可以投票
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = true
-		rf.lastActiveTime = time.Now()
-		rf.votedFor = args.CandidateId
-		rf.currentTerm = args.Term
-		Debug(dClient,"S%d  vote for node[%d]",rf.me,rf.votedFor)
-	} else {  //这一轮不能投票
+	//这个部分没必要，不会被执行
+	// if rf.currentTerm == args.Term && rf.votedFor == -1 || rf.votedFor == args.CandidateId {  //此时说明这一轮可以投票
+	// 	reply.Term = rf.currentTerm
+	// 	reply.VoteGranted = true
+	// 	rf.lastActiveTime = time.Now()
+	// 	rf.votedFor = args.CandidateId
+	// 	rf.currentTerm = args.Term
+	// 	Debug(dClient,"S%d  vote for node[%d]",rf.me,rf.votedFor)
+	// } else {  //这一轮不能投票
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
 		Debug(dClient,"S%d  term%d currentTerm大一些？%t rf.votedFor %d",rf.me,rf.currentTerm,rf.currentTerm > args.Term,rf.votedFor)
-	}
+	// }
 }
 
 func (rf *Raft) AppendEntry(args *AppendEntryArgs, reply *AppendEntryReply) {
