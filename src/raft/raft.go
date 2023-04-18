@@ -190,6 +190,9 @@ type AppendEntryReply struct {
     // Your data here (2A).
     Term         int
     Success      bool
+
+    TargetTerm   int
+    TargetCnt    int
 }
 
 //
@@ -259,9 +262,16 @@ func (rf *Raft) AppendEntry(args *AppendEntryArgs, reply *AppendEntryReply) {
         if args.PrevLogIndex >= len(rf.logs) {  //PrevLogIndex，PrevLogTerm的log是否匹配
             Debug(dClient,"S%d appendentry失败, len(rf.logs):%d args.PrevLogIndex:%d",rf.me,len(rf.logs),args.PrevLogIndex)
             reply.Success = false
+            reply.TargetTerm = -1
+            reply.TargetCnt = 0
         } else if rf.logs[args.PrevLogIndex].LogTerm != args.PrevLogTerm{
             Debug(dClient,"S%d appendentry失败",rf.me)
             reply.Success = false
+            reply.TargetTerm = rf.logs[args.PrevLogIndex].LogTerm
+            reply.TargetCnt = 0
+            for j:=args.PrevLogIndex ;j>=0 && rf.logs[j].LogTerm!= reply.TargetTerm;j--{
+                reply.TargetCnt++
+            }
             rf.logs = rf.logs[:args.PrevLogIndex+1]
         } else {
             Debug(dClient,"S%d appendentry成功，args.LogEntries：%d",rf.me,len(args.LogEntries))
@@ -269,7 +279,11 @@ func (rf *Raft) AppendEntry(args *AppendEntryArgs, reply *AppendEntryReply) {
             rf.logs = append(rf.logs[:args.PrevLogIndex+1], args.LogEntries...)
             if len(args.LogEntries)>0{
                 // Debug(dClient,"S%d log复制完毕，args.PrevLogIndex:%d-----LogEntries[0].LogTerm:%d-------------",rf.me,args.PrevLogIndex,args.LogEntries[0].LogTerm)
-                Debug(dClient,"S%d log:%d %d-------------",rf.me,rf.logs[0].LogTerm,rf.logs[1].LogTerm)
+                logTerms := make([]int, len(rf.logs))
+                for i, logEntry := range rf.logs {
+                    logTerms[i] = logEntry.LogTerm
+                }
+                Debug(dClient,"S%d log terms: %v", rf.me, logTerms)
             }
             if args.LeaderCommit > rf.commitIndex{
                 // rf.commitIndex =min(leaderCommit, len(rf.logs)-1)  //TODO:需要改为这个嘛？
@@ -340,6 +354,9 @@ func (rf *Raft) sendAppendEntry(server int, args *AppendEntryArgs, reply *Append
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+
     index := -1
     term := -1
     isLeader := true
@@ -349,9 +366,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
         return -1, -1, false
     }
 
-    rf.mu.Lock()
     rf.logs = append(rf.logs,&LogEntry{rf.currentTerm,command})
-    rf.mu.Unlock()
     index = len(rf.logs)-1
     term = rf.currentTerm
 
@@ -604,6 +619,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
                     for i:=0; i<rf.n; i++{
                         if rf.me == i{
+                            rf.nextIndex[i]=len(rf.logs)
+                            rf.matchIndex[i]=len(rf.logs)-1
                             continue
                         }
                         args := &AppendEntryArgs{
@@ -613,6 +630,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
                             PrevLogTerm:         rf.logs[rf.nextIndex[i]-1].LogTerm,
                             LeaderCommit:        rf.commitIndex,     
                         }
+
                         args.LogEntries = make([]*LogEntry, 0)
                         // Debug(dClient,"S%d nextIndex[i]:%d,len(rf.logs):%d 000000000000000000000000",rf.me,rf.nextIndex[i],len(rf.logs))
                         args.LogEntries = append(args.LogEntries, rf.logs[rf.nextIndex[i]:len(rf.logs)]...)  //索引为0的槽位不用
@@ -641,12 +659,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
                                 // if(rf.nextIndex[server]==1){
                                 //     panic(fmt.Sprintf("结果为%d prevlogindex:%d PrevLogTerm:%d",rf.nextIndex[server],args.PrevLogIndex,args.PrevLogTerm))
                                 // }
-                                rf.nextIndex[server]--
+                                if rf.logs[args.PrevLogIndex].LogTerm < reply.TargetTerm{
+                                    rf.nextIndex[server]-=reply.TargetCnt
+                                } else{
+                                    j:=args.PrevLogIndex
+                                    for ;j>=0&&rf.logs[j].LogTerm == rf.logs[args.PrevLogIndex].LogTerm;j--{}
+                                    rf.nextIndex[server]=j+1
+                                }
                                 return
                             }else if len(args.LogEntries)!=0{   //说明不是heartbeat
-                                rf.nextIndex[server]=len(rf.logs)
-                                rf.matchIndex[server]=len(rf.logs)-1  //TODO:这里就很怪，搞得matchindex好像没用
 
+                                rf.nextIndex[server]=args.PrevLogIndex+len(args.LogEntries)+1
+                                rf.matchIndex[server]=rf.nextIndex[server]-1  //TODO:这里就很怪，搞得matchindex好像没用
+                                Debug(dClient,"S%d args.PrevLogIndex %d len(args.LogEntries) %d matchindex:%v",rf.me,args.PrevLogIndex,len(args.LogEntries),rf.matchIndex)
                                 matchIndexSlice := make([]int, rf.n)
                                 for index, matchIndex := range rf.matchIndex {
                                     matchIndexSlice[index] = matchIndex
@@ -657,10 +682,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
                                 newCommitIndex := matchIndexSlice[rf.n/2]
                                 //不能提交不属于当前term的日志
                                 //TODO：这里有必要判断这一步吗？如果不满足这些条件，应该没办法被选为leader吧
-                                if newCommitIndex > rf.commitIndex && rf.logs[newCommitIndex].LogTerm == rf.currentTerm {  
+                                // if newCommitIndex > rf.commitIndex && rf.logs[newCommitIndex].LogTerm == rf.currentTerm {
+                                if rf.commitIndex != newCommitIndex{
+                                    Debug(dClient,"S%d 能够更改commitindex？matchindex:%v",rf.me,rf.matchIndex)
                                     Debug(dClient,"S%d role[%v] commitIndex %v update to newcommitIndex %v, command: %v", rf.me, rf.role, rf.commitIndex, newCommitIndex, rf.logs[newCommitIndex])
-                                    rf.commitIndex = newCommitIndex
                                 }
+                                rf.commitIndex = newCommitIndex
+                                // }
                             }
 
                             if reply.Term > rf.currentTerm{

@@ -160,6 +160,7 @@ func TestFailAgree2B(t *testing.T) {
 
 	// disconnect one follower from the network.
 	leader := cfg.checkOneLeader()
+	Debug(dClient,"S%d ------------disconnected------------------",(leader + 1) % servers)
 	cfg.disconnect((leader + 1) % servers)
 
 	// the leader and remaining follower should be
@@ -171,6 +172,7 @@ func TestFailAgree2B(t *testing.T) {
 	cfg.one(105, servers-1, false)
 
 	// re-connect
+	Debug(dClient,"S%d ------------connected------------------",leader + 1)
 	cfg.connect((leader + 1) % servers)
 
 	// the full set of servers should preserve
@@ -384,6 +386,9 @@ func TestBackup2B(t *testing.T) {
 
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
+	Debug(dClient,"S%d ------------disconnected------------------",(leader1 + 2) % servers)
+	Debug(dClient,"S%d ------------disconnected------------------",(leader1 + 3) % servers)
+	Debug(dClient,"S%d ------------disconnected------------------",(leader1 + 4) % servers)
 	cfg.disconnect((leader1 + 2) % servers)
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
@@ -395,9 +400,14 @@ func TestBackup2B(t *testing.T) {
 
 	time.Sleep(RaftElectionTimeout / 2)
 
+	Debug(dClient,"S%d ------------disconnected------------------",(leader1 + 0) % servers)
+	Debug(dClient,"S%d ------------disconnected------------------",(leader1 + 1) % servers)
 	cfg.disconnect((leader1 + 0) % servers)
 	cfg.disconnect((leader1 + 1) % servers)
 
+	Debug(dClient,"S%d ------------connected------------------",(leader1 + 2) % servers)
+	Debug(dClient,"S%d ------------connected------------------",(leader1 + 3) % servers)
+	Debug(dClient,"S%d ------------connected------------------",(leader1 + 4) % servers)
 	// allow other partition to recover
 	cfg.connect((leader1 + 2) % servers)
 	cfg.connect((leader1 + 3) % servers)
@@ -414,6 +424,7 @@ func TestBackup2B(t *testing.T) {
 	if leader2 == other {
 		other = (leader2 + 1) % servers
 	}
+	Debug(dClient,"S%d ------------disconnected------------------",other)
 	cfg.disconnect(other)
 
 	// lots more commands that won't commit
@@ -425,8 +436,12 @@ func TestBackup2B(t *testing.T) {
 
 	// bring original leader back to life,
 	for i := 0; i < servers; i++ {
+		Debug(dClient,"S%d ------------disconnected------------------",i)
 		cfg.disconnect(i)
 	}
+	Debug(dClient,"S%d ------------connected------------------",(leader1 + 0) % servers)
+	Debug(dClient,"S%d ------------connected------------------",(leader1 + 1) % servers)
+	Debug(dClient,"S%d ------------connected------------------",other)
 	cfg.connect((leader1 + 0) % servers)
 	cfg.connect((leader1 + 1) % servers)
 	cfg.connect(other)
@@ -438,6 +453,7 @@ func TestBackup2B(t *testing.T) {
 
 	// now everyone
 	for i := 0; i < servers; i++ {
+		Debug(dClient,"S%d ------------connected------------------",i)
 		cfg.connect(i)
 	}
 	cfg.one(rand.Int(), servers, true)
